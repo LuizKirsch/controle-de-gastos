@@ -1,0 +1,25 @@
+services:
+    db:
+        image: mysql:8.0
+        container_name: db_controle_gastos
+        ports:
+            - "3309:3306"
+        volumes:
+            - db_data_local:/var/lib/mysql
+
+    phpmyadmin:
+        container_name: phpmyadmin_controle_gastos
+        image: phpmyadmin/phpmyadmin
+        ports:
+            - "8080:80"
+        environment:
+            PMA_HOST: db
+            PMA_USER: root
+            PMA_PASSWORD: secret
+        depends_on:
+            - db
+        networks:
+            - project-network
+
+volumes:
+    db_data_local:

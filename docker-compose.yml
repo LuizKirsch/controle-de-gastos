@@ -1,0 +1,126 @@
+version: "3.9"
+
+services:
+    db:
+        image: mysql:8.0
+        container_name: db_controle_gastos
+        ports:
+            - "3309:3306"
+        environment:
+            MYSQL_ROOT_PASSWORD: secret
+            MYSQL_DATABASE: banco_dados_controle_gastos
+        volumes:
+            - db_data:/var/lib/mysql
+        networks:
+            - project-network
+
+    app:
+        container_name: app_controle_gastos
+        build:
+            context: .
+            dockerfile: laravel.Dockerfile
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            - db
+        environment:
+            DB_HOST: ${DB_HOST}
+            DB_PORT: ${DB_PORT}
+            DB_DATABASE: ${DB_DATABASE}
+            DB_USERNAME: ${DB_USERNAME}
+            DB_PASSWORD: ${DB_PASSWORD}
+            PUSHER_HOST: ""
+        command: >
+            sh -c "
+            php artisan optimize:clear &&
+            php-fpm
+            "
+        networks:
+            - project-network
+
+    webserver:
+        container_name: webserver_controle_gastos
+        image: nginx:alpine
+        volumes:
+            - .:/var/www/html
+            - ./nginx.conf:/etc/nginx/conf.d/default.conf
+        ports:
+            - "8000:8080"
+        depends_on:
+            - app_controle_gastos
+        networks:
+            - project-network
+
+    redis:
+        image: redis:alpine
+        container_name: redis_controle_gastos
+        volumes:
+            - redis_data:/data
+        networks:
+            - project-network
+        restart: unless-stopped
+
+    horizon:
+        container_name: horizon_controle_gastos
+        build:
+            context: .
+            dockerfile: laravel.Dockerfile
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            - redis_controle_gastos
+            - db
+        command: >
+            sh -c "
+            php artisan horizon:terminate || true &&
+            php artisan horizon:clear &&
+            php artisan horizon
+            "
+        environment:
+            DB_HOST: db
+            DB_PORT: 3306
+            DB_DATABASE: banco_dados_controle_gastos
+            DB_USERNAME: root
+            DB_PASSWORD: secret
+        networks:
+            - project-network
+        restart: unless-stopped
+
+    cron:
+        container_name: cron_controle_gastos
+        build:
+            context: .
+            dockerfile: laravel.Dockerfile
+        volumes:
+            - .:/var/www/html
+        depends_on:
+            - app_controle_gastos
+        command: >
+            sh -c "
+            echo '* * * * * /usr/local/bin/php /var/www/html/artisan schedule:run >> /var/www/html/storage/logs/cron.log 2>&1' > /etc/crontabs/root &&
+            crond -f -l 2
+            "
+        networks:
+            - project-network
+        restart: unless-stopped
+
+    mailpit:
+        container_name: mailpit_controle_gastos
+        image: axllent/mailpit:latest
+        ports:
+            - "1025:1025"
+            - "8025:8025"
+        environment:
+            MP_SMTP_AUTH_ACCEPT_ANY: 1
+            MP_SMTP_AUTH_ALLOW_INSECURE: 1
+        networks:
+            - project-network
+        restart: unless-stopped
+
+networks:
+    project-network:
+        driver: bridge
+
+volumes:
+    db_data:
+    redis_data:
